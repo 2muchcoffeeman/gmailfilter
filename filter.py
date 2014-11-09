@@ -2,51 +2,183 @@
 from bs4 import BeautifulSoup
 import lxml
 import sys
-
-header = "<?xml version='1.0' encoding='UTF-8'?><feed xmlns='http://www.w3.org/2005/Atom' xmlns:apps='http://schemas.google.com/apps/2006'>" \
-         "<title>Mail Filters</title>"
-
-
-footer = "</feed>"
+import os
 
 
 def main(argz):
     file_name = argz[0]
-    soup = BeautifulSoup(open(file_name), "xml")
-    print get_name(soup)
-    print get_email(soup)
+    mail_filter = MailFilter(file_name)
+    while 1:
+        print mail_filter
+        command = raw_input("Enter a value:")
+        mail_filter.process_command(command)
 
 
-entry_template = \
-    "<entry>" \
-    "   <category term='filter'></category>" \
-    "   <title>{0}</title>" \
-    "   <content></content>" \
-    "   <apps:property name='from' value='flybuys@edm.flybuys.com.au'/>" \
-    "   <apps:property name='label' value='Newsletters'/>" \
-    "</entry>"
+class MailFilter:
+    header = "<?xml version='1.0' encoding='UTF-8'?>" \
+             "<feed xmlns='http://www.w3.org/2005/Atom' xmlns:apps='http://schemas.google.com/apps/2006'>\n" \
+             "<title>Mail Filters</title>\n"
+    footer = "</feed>\n"
+    author_template = "<author>\n" \
+                      "    <name>{0}</name>\n" \
+                      "    <email>{1}</email>\n" \
+                      "</author>\n"
+
+    def __init__(self, filename):
+        self.filename = filename
+        soup = BeautifulSoup(open(filename), "xml")
+        self.name = soup.find("name")
+        self.email = soup.find("email")
+        self.entries = []
+        entries_nodes = soup.find_all("entry")
+        for e in entries_nodes:
+            entry = Entry(e)
+            self.entries.append(entry)
+
+    def __repr__(self):
+        return "{0} {1}\n".format(self.name, self.email) + \
+               ('\n'.join(["{0} {1}".format(idx, repr(e)) for idx, e in enumerate(self.entries)]))
+
+#    def to_xml(self):
+#        MailFilter.header
+#        MailFilter.author_template.format(self.name, self.email)
+#        MailFilter.footer
+
+    # TODO: Can I have variable length arguments and just pass in an array?
+    def process_command(self, command):
+        parts = command.split(" ")
+        action = parts[0]
+
+        if action == 'exit':
+            sys.exit(0)
+
+        arguments = parts[1:]
+        actions = {
+            'join': lambda x: self.join_entries(x),
+            'remove': lambda x: self.remove(x),
+            'save': lambda x: self.save(x),
+            # 'delete': lambda x: self.delete(x),
+            # 'to': lambda x, y: self.to(x, y)
+        }
+        if action in actions:
+            actions[action](arguments)
+
+    def save(self, arguments):
+        postfix = 1
+        save_filename = '_'.join([self.filename, str(postfix)])
+        while os.path.isfile(save_filename):
+            postfix += 1
+            save_filename = '_'.join([self.filename, str(postfix)])
+        file_handler = open(save_filename, 'w')
+        # Start writing the file out
+        file_handler.write(MailFilter.header)
+        file_handler.write(MailFilter.author_template.format(self.name, self.email))
+        # Do the entries
+        for e in self.entries:
+            file_handler.write(e.to_xml())
+        file_handler.write(MailFilter.footer)
+        file_handler.close()
+
+    # Join the conditions
+    def join_entries(self, arguments):
+        m = int(arguments[0])
+        n = int(arguments[1])
+        e1 = self.entries[m]
+        e2 = self.entries[n]
+        self.entries.remove(e2)
+        e1.join_entry(e2)
+
+    def remove(self, arguments):
+        idx = int(arguments[0])
+        self.entries.remove(self.entries[idx])
+
+    def author_xml(self, name, email):
+        return self.author_template.format(name, email)
 
 
-author_template = "<author>" \
-                  "<name>{0}</name>" \
-                  "<email>{1}</email>" \
-                  "</author>"
+class Entry:
+    def __init__(self, entry):
+        if entry:
+            properties = entry.find_all("property")
+            self.properties = [Prop(p['name'], p['value']) for p in properties]
+        else:
+            self.properties = []
+
+    def __repr__(self):
+        return "".join([repr(p) for p in self.properties])
+
+    def join_entry(self, entry):
+        new_props_hash = {p.name: p for p in self.properties}
+        for p in entry.properties:
+            if p.name in new_props_hash:
+                new_p = new_props_hash[p.name].join(p)
+                new_props_hash[p.name] = new_p
+            else:
+                new_props_hash[p.name] = p
+        self.properties = [value for value in new_props_hash.itervalues()]
+
+    def to_xml(self):
+        props_xml = ''.join([p.to_xml() for p in self.properties])
+        return props_xml.join([Entry.entry_template_header, Entry.entry_template_footer])
+
+    entry_template_header = \
+        "<entry>\n" \
+        "    <category term='filter'></category>\n" \
+        "    <title>Mail Filter</title>\n" \
+        "    <content></content>\n"
+
+    entry_template_footer = "</entry>\n"
 
 
-def author_xml(name, email):
-    return author_template.format(name, email)
+class Prop:
+    def __init__(self, name, value):
+        self.name = name
+        self.value = value
 
+    def __repr__(self):
+        return "\t{0}:{1}\n".format(self.name, self.value)
 
-def get_name(soup):
-    return soup.find_all("name")[0].contents[0]
+    def join(self, prop):
+        if not self.can_be_joined():
+            return Prop(self.name, self.value)
+        if self.name == prop.name:
+            return Prop(self.name, ' OR '.join([self.value, prop.value]))
+        else:
+            return self
 
+    def can_be_joined(self):
+        return self.name in Prop.joinable_properties
 
-def get_email(soup):
-    return soup.find_all("email")[0].contents[0]
+    def to_xml(self):
+        return self.xml[self.name].format(self.value)
+
+    joinable_properties = {'hasTheWord', 'from', 'to'}
+
+    xml = {
+        'hasTheWord': "    <apps:property name='hasTheWord' value='{0}'/>\n",
+        'from': "    <apps:property name='from' value='{0}'/>\n",
+        'to': "    <apps:property name:'to' value:'{0}'/>\n",
+
+        'sizeOperator': "    <apps:property name:'sizeOperator' value:'s_sl'/>\n",
+        'sizeUnit': "    <apps:property name:'sizeUnit' value:'s_smb'/>\n",
+
+        'shouldMarkAsRead': "    <apps:property name:'shouldMarkAsRead' value:'true'/>\n",
+        'label': "    <apps:property name:'label' value:'{0}'/>\n"
+    }
+
+    apps_hasTheWord = "<apps:property name='hasTheWord' value='{0}'/>"
+    apps_from = "<apps:property name='from' value='{0}'/>"
+    apps_to = "<apps:property name='to' value='{0}'/>"
+
+    apps_sizeOperator = "<apps:property name='sizeOperator' value='s_sl'/>"
+    apps_sizeUnit = "<apps:property name='sizeUnit' value='s_smb'/>"
+
+    apps_shouldMarkAsRead = "<apps:property name='shouldMarkAsRead' value='true'/>"
+    apps_label = "<apps:property name='label' value='{0}'/>"
 
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print "usage: filter <filter.xml>"
+        print("usage: filter <filter.xml>")
     else:
         main(sys.argv[1:])
