@@ -27,8 +27,8 @@ class MailFilter:
     def __init__(self, filename):
         self.filename = filename
         soup = BeautifulSoup(open(filename), "xml")
-        self.name = soup.find("name")
-        self.email = soup.find("email")
+        self.name = soup.find("name").text
+        self.email = soup.find("email").text
         self.entries = []
         entries_nodes = soup.find_all("entry")
         for e in entries_nodes:
@@ -57,18 +57,33 @@ class MailFilter:
             'join': lambda x: self.join_entries(x),
             'remove': lambda x: self.remove(x),
             'save': lambda x: self.save(x),
-            # 'delete': lambda x: self.delete(x),
-            # 'to': lambda x, y: self.to(x, y)
+            'delete': lambda x: self.delete_property(x),
+            'add': lambda x: self.add_property(x)
         }
         if action in actions:
             actions[action](arguments)
 
+    def add_property(self, arguments):
+        entry_index = int(arguments[0])
+        property_to_add = arguments[1:]
+        self.entries[entry_index].add_property(property_to_add)
+
+    def delete_property(self, arguments):
+        entry_index = int(arguments[0])
+        property_to_remove = arguments[1]
+        self.entries[entry_index].remove_property(property_to_remove)
+
     def save(self, arguments):
         postfix = 1
-        save_filename = '_'.join([self.filename, str(postfix)])
-        while os.path.isfile(save_filename):
-            postfix += 1
+
+        if len(arguments) == 1:
+            save_filename = arguments[0]
+        else:
             save_filename = '_'.join([self.filename, str(postfix)])
+            while os.path.isfile(save_filename):
+                postfix += 1
+                save_filename = '_'.join([self.filename, str(postfix)])
+
         file_handler = open(save_filename, 'w')
         # Start writing the file out
         file_handler.write(MailFilter.header)
@@ -81,12 +96,12 @@ class MailFilter:
 
     # Join the conditions
     def join_entries(self, arguments):
-        m = int(arguments[0])
-        n = int(arguments[1])
-        e1 = self.entries[m]
-        e2 = self.entries[n]
-        self.entries.remove(e2)
-        e1.join_entry(e2)
+        entries_to_join = [self.entries[int(a)] if int(a) < len(self.entries) else None for a in arguments]
+        e1 = entries_to_join[0]
+        for e in entries_to_join[1:]:
+            if e:
+                self.entries.remove(e)
+                e1.join_entry(e)
 
     def remove(self, arguments):
         idx = int(arguments[0])
@@ -120,6 +135,27 @@ class Entry:
     def to_xml(self):
         props_xml = ''.join([p.to_xml() for p in self.properties])
         return props_xml.join([Entry.entry_template_header, Entry.entry_template_footer])
+
+    def remove_property(self, prop_name):
+        matching_properties = [p if p.name == prop_name else None for p in self.properties]
+        for p in matching_properties:
+            if p:
+                self.properties.remove(p)
+
+    def add_property(self, props):
+        if len(props) == 0:
+            return
+        prop = props[0]
+        if prop in Entry.properties_with_single_values:
+            self.properties.append(Prop(prop, Entry.properties_with_single_values[prop]))
+        else:
+            self.properties.append(Prop(prop, props[1]))
+
+    properties_with_single_values = {
+        'sizeOperator': 's_sl',
+        'sizeUnit': 's_smb',
+        'shouldMarkAsRead': 'true'
+    }
 
     entry_template_header = \
         "<entry>\n" \
@@ -157,13 +193,13 @@ class Prop:
     xml = {
         'hasTheWord': "    <apps:property name='hasTheWord' value='{0}'/>\n",
         'from': "    <apps:property name='from' value='{0}'/>\n",
-        'to': "    <apps:property name:'to' value:'{0}'/>\n",
+        'to': "    <apps:property name='to' value='{0}'/>\n",
 
-        'sizeOperator': "    <apps:property name:'sizeOperator' value:'s_sl'/>\n",
-        'sizeUnit': "    <apps:property name:'sizeUnit' value:'s_smb'/>\n",
+        'sizeOperator': "    <apps:property name='sizeOperator' value='s_sl'/>\n",
+        'sizeUnit': "    <apps:property name='sizeUnit' value='s_smb'/>\n",
 
-        'shouldMarkAsRead': "    <apps:property name:'shouldMarkAsRead' value:'true'/>\n",
-        'label': "    <apps:property name:'label' value:'{0}'/>\n"
+        'shouldMarkAsRead': "    <apps:property name='shouldMarkAsRead' value='true'/>\n",
+        'label': "    <apps:property name='label' value='{0}'/>\n"
     }
 
     apps_hasTheWord = "<apps:property name='hasTheWord' value='{0}'/>"
