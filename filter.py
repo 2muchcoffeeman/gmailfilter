@@ -8,12 +8,10 @@ import os
 def main(argz):
     file_name = argz[0]
     mail_filter = MailFilter(file_name)
-    print_filters = True
+    print mail_filter
     while 1:
-        if print_filters:
-            print mail_filter
         command = raw_input("Enter a value:")
-        print_filters = mail_filter.process_command(command)
+        mail_filter.process_command(command)
 
 
 class MailFilter:
@@ -71,13 +69,14 @@ class MailFilter:
             'save': lambda x: self.save(x),
             'delete': lambda x: self.delete_property(x),
             'add': lambda x: self.add_property(x),
-            'search': lambda x: self.search_property(x)
+            'search': lambda x: self.search_property(x),
         }
 
+        if action == 'print':
+            print self
+
         if action == 'help':
-            for action in actions:
-                print action
-            return False
+            for action in actions: print action
 
         elif action in actions:
             return actions[action](arguments)
@@ -85,7 +84,7 @@ class MailFilter:
     def search_property(self, arguments):
         name = arguments[0]
         value = arguments[1]
-        for entry in self.entries:
+        for idx, entry in enumerate(self.entries):
             """
             :type entry Entry
             """
@@ -94,7 +93,7 @@ class MailFilter:
                 :type prop Prop
                 """
                 if prop.name == name and prop.value == value:
-                    print entry
+                    print "{0} {1!r}".format(idx, entry)
                     break
         return False
 
