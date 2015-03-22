@@ -8,10 +8,12 @@ import os
 def main(argz):
     file_name = argz[0]
     mail_filter = MailFilter(file_name)
+    print_filters = True
     while 1:
-        print mail_filter
+        if print_filters:
+            print mail_filter
         command = raw_input("Enter a value:")
-        mail_filter.process_command(command)
+        print_filters = mail_filter.process_command(command)
 
 
 class MailFilter:
@@ -30,6 +32,12 @@ class MailFilter:
         self.name = soup.find("name").text
         self.email = soup.find("email").text
         self.entries = []
+        """
+        :type filename string
+        :type name string
+        :type email string
+        :type entries list
+        """
         entries_nodes = soup.find_all("entry")
         for e in entries_nodes:
             entry = Entry(e)
@@ -46,6 +54,10 @@ class MailFilter:
 
     # TODO: Can I have variable length arguments and just pass in an array?
     def process_command(self, command):
+        """
+        :type command: string
+        :rtype: boolean
+        """
         parts = command.split(" ")
         action = parts[0]
 
@@ -58,20 +70,45 @@ class MailFilter:
             'remove': lambda x: self.remove(x),
             'save': lambda x: self.save(x),
             'delete': lambda x: self.delete_property(x),
-            'add': lambda x: self.add_property(x)
+            'add': lambda x: self.add_property(x),
+            'search': lambda x: self.search_property(x)
         }
-        if action in actions:
-            actions[action](arguments)
+
+        if action == 'help':
+            for action in actions:
+                print action
+            return False
+
+        elif action in actions:
+            return actions[action](arguments)
+
+    def search_property(self, arguments):
+        name = arguments[0]
+        value = arguments[1]
+        for entry in self.entries:
+            """
+            :type entry Entry
+            """
+            for prop in entry.properties:
+                """
+                :type prop Prop
+                """
+                if prop.name == name and prop.value == value:
+                    print entry
+                    break
+        return False
 
     def add_property(self, arguments):
         entry_index = int(arguments[0])
         property_to_add = arguments[1:]
         self.entries[entry_index].add_property(property_to_add)
+        return True
 
     def delete_property(self, arguments):
         entry_index = int(arguments[0])
         property_to_remove = arguments[1]
         self.entries[entry_index].remove_property(property_to_remove)
+        return True
 
     def save(self, arguments):
         postfix = 1
@@ -118,6 +155,9 @@ class Entry:
             self.properties = [Prop(p['name'], p['value']) for p in properties]
         else:
             self.properties = []
+        """
+        :type properties list
+        """
 
     def __repr__(self):
         return "".join([repr(p) for p in self.properties])
@@ -170,6 +210,10 @@ class Prop:
     def __init__(self, name, value):
         self.name = name
         self.value = value
+        """
+        :type name string
+        :type value string
+        """
 
     def __repr__(self):
         return "\t{0}:{1}\n".format(self.name, self.value)
